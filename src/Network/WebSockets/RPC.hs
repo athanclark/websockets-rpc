@@ -22,7 +22,6 @@ import Data.Aeson (ToJSON, FromJSON, decode, encode)
 
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM)
-import Control.Monad.Trans (lift)
 
 
 data RPCServerParams rep com m = RPCServerParams
@@ -113,48 +112,50 @@ rpcClient :: forall sub sup rep com m
              , MonadIO m
              , MonadThrow m
              )
-          => RPCClient sub sup rep com m
+          => ((RPCClient sub sup rep com m -> WebSocketClientRPCT rep com m ()) -> WebSocketClientRPCT rep com m ())
           -> ClientAppT (WebSocketClientRPCT rep com m) ()
-rpcClient RPCClient{subscription,replier,completion} conn = do
-  _ident <- freshRPCID
+rpcClient userGo conn =
+  let go RPCClient{subscription,replier,completion} = do
+        _ident <- freshRPCID
 
-  liftIO (sendDataMessage conn (Text (encode (Subscribe RPCIdentified{_ident, _params = subscription}))))
+        liftIO (sendDataMessage conn (Text (encode (Subscribe RPCIdentified{_ident, _params = subscription}))))
 
-  env <- getClientEnv
+        env <- getClientEnv
 
-  let supply :: sup -> m ()
-      supply sup = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Just sup}))))
+        let supply :: sup -> m ()
+            supply sup = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Just sup}))))
 
-      cancel :: m ()
-      cancel = do
-        liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()}))))
-        runWebSocketClientRPCT' env (unregisterReplyComplete _ident)
+            cancel :: m ()
+            cancel = do
+              liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()}))))
+              runWebSocketClientRPCT' env (unregisterReplyComplete _ident)
 
-  registerReplyComplete _ident (replier RPCClientParams{supply,cancel}) completion
+        registerReplyComplete _ident (replier RPCClientParams{supply,cancel}) completion
 
-  let runRep :: Reply rep -> WebSocketClientRPCT rep com m ()
-      runRep (Reply RPCIdentified{_ident = _ident',_params})
-        | _ident' == _ident = runReply _ident _params
-        | otherwise = pure () -- FIXME fail somehow legibly??
+        let runRep :: Reply rep -> WebSocketClientRPCT rep com m ()
+            runRep (Reply RPCIdentified{_ident = _ident',_params})
+              | _ident' == _ident = runReply _ident _params
+              | otherwise = pure () -- FIXME fail somehow legibly??
 
-      runCom :: Complete com -> WebSocketClientRPCT rep com m ()
-      runCom (Complete RPCIdentified{_ident = _ident', _params})
-        | _ident' == _ident = do
-            runComplete _ident' _params -- NOTE don't use completion here because it might not exist later
-            unregisterReplyComplete _ident'
-        | otherwise = pure ()
+            runCom :: Complete com -> WebSocketClientRPCT rep com m ()
+            runCom (Complete RPCIdentified{_ident = _ident', _params})
+              | _ident' == _ident = do
+                  runComplete _ident' _params -- NOTE don't use completion here because it might not exist later
+                  unregisterReplyComplete _ident'
+              | otherwise = pure ()
 
-  data' <- liftIO (receiveDataMessage conn)
-  case data' of
-    Text xs ->
-      case decode xs of
-        Nothing -> throwM (WebSocketRPCParseFailure xs)
-        Just x -> case x of
-          Rep rep -> runRep rep
-          Com com -> runCom com
-    Binary xs ->
-      case decode xs of
-        Nothing -> throwM (WebSocketRPCParseFailure xs)
-        Just x -> case x of
-          Rep rep -> runRep rep
-          Com com -> runCom com
+        data' <- liftIO (receiveDataMessage conn)
+        case data' of
+          Text xs ->
+            case decode xs of
+              Nothing -> throwM (WebSocketRPCParseFailure xs)
+              Just x -> case x of
+                Rep rep -> runRep rep
+                Com com -> runCom com
+          Binary xs ->
+            case decode xs of
+              Nothing -> throwM (WebSocketRPCParseFailure xs)
+              Just x -> case x of
+                Rep rep -> runRep rep
+                Com com -> runCom com
+  in  userGo go
