@@ -15,9 +15,16 @@ Library
   GHC-Options:          -Wall
   Exposed-Modules:      Network.WebSockets.RPC
                         Network.WebSockets.RPC.Types
+                        Network.WebSockets.RPC.Trans.Client
+                        Network.WebSockets.RPC.Trans.Server
   -- Other-Modules:        Network.WebSockets.RPC.Internal
   Build-Depends:        base >= 4.8 && < 5
                       , aeson
+                      , bytestring
+                      , containers
+                      , exceptions
+                      , mtl
+                      , stm
                       , text
                       , unordered-containers
                       , websockets

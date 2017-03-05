@@ -6,7 +6,11 @@
   , NamedFieldPuns
   #-}
 
-module Network.WebSockets.RPC.Types where
+module Network.WebSockets.RPC.Types
+  ( RPCID, getRPCID, Subscribe (Subscribe), Supply (..), Reply (Reply), Complete (Complete)
+  , RPCIdentified (..)
+  , WebSocketRPCException (..)
+  ) where
 
 import Data.Data (Data, Typeable)
 import GHC.Generics (Generic)
@@ -14,11 +18,15 @@ import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=), object)
 import Data.Aeson.Types (typeMismatch, Value (Object, String))
 import qualified Data.HashMap.Lazy as HM
 import Data.Text (Text)
+import Data.ByteString.Lazy (ByteString)
+
+import Control.Applicative ((<|>))
+import Control.Monad.Catch (Exception)
 
 
 -- | Unique identifier for an RPC session
 newtype RPCID = RPCID {getRPCID :: Int}
-  deriving (Eq, Ord, Enum, Bounded, Generic, Data, Typeable, FromJSON, ToJSON)
+  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, FromJSON, ToJSON)
 
 
 data RPCIdentified a = RPCIdentified
@@ -39,6 +47,7 @@ instance FromJSON a => FromJSON (RPCIdentified a) where
 
 -- * RPC Methods
 
+
 newtype Subscribe a = Subscribe {getSubscribe :: RPCIdentified a}
   deriving (Eq, Generic, Data, Typeable)
 
@@ -55,23 +64,27 @@ instance FromJSON a => FromJSON (Subscribe a) where
       else fail "Not a subscription"
   parseJSON x = typeMismatch "Subscribe" x
 
-newtype Supply    a = Supply    {getSupply    :: RPCIdentified a}
-  deriving (Eq, Generic, Data, Typeable)
+
+data Supply a = Supply
+  { getSupply :: !(RPCIdentified a)
+  , cancel    :: {-# UNPACK #-} !Bool
+  } deriving (Eq, Generic, Data, Typeable)
 
 instance ToJSON a => ToJSON (Supply a) where
-  toJSON (Supply x) = case toJSON x of
-    Object xs -> Object (HM.insert "type" (String "sup") xs)
+  toJSON Supply {getSupply,cancel} = case toJSON getSupply of
+    Object xs -> Object (HM.insert "type" (String "sup") (HM.insert "cancel" (toJSON cancel) xs))
     _         -> error "inconceivable!"
 
 instance FromJSON a => FromJSON (Supply a) where
   parseJSON x@(Object o) = do
     t <- o .: "type"
     if t == ("sup" :: Text)
-      then Supply <$> parseJSON x
+      then Supply <$> parseJSON x <*> o .: "cancel"
       else fail "Not a supply"
   parseJSON x = typeMismatch "Supply" x
 
-newtype Reply     a = Reply     {getReply     :: RPCIdentified a}
+
+newtype Reply a = Reply {getReply :: RPCIdentified a}
   deriving (Eq, Generic, Data, Typeable)
 
 instance ToJSON a => ToJSON (Reply a) where
@@ -87,7 +100,8 @@ instance FromJSON a => FromJSON (Reply a) where
       else fail "Not a reply"
   parseJSON x = typeMismatch "Reply" x
 
-newtype Complete  a = Complete  {getComplete  :: RPCIdentified a}
+
+newtype Complete a = Complete {getComplete :: RPCIdentified a}
   deriving (Eq, Generic, Data, Typeable)
 
 instance ToJSON a => ToJSON (Complete a) where
@@ -102,3 +116,38 @@ instance FromJSON a => FromJSON (Complete a) where
       then Complete <$> parseJSON x
       else fail "Not a complete"
   parseJSON x = typeMismatch "Complete" x
+
+
+-- ** Categorized
+
+data ClientToServer a
+  = Sub (Subscribe a)
+  | Sup (Supply a)
+  deriving (Eq, Generic, Data, Typeable)
+
+instance ToJSON a => ToJSON (ClientToServer a) where
+  toJSON (Sub x) = toJSON x
+  toJSON (Sup x) = toJSON x
+
+instance FromJSON a => FromJSON (ClientToServer a) where
+  parseJSON x = (Sub <$> parseJSON x) <|> (Sup <$> parseJSON x)
+
+data ServerToClient a
+  = Rep (Reply a)
+  | Com (Complete a)
+
+instance ToJSON a => ToJSON (ServerToClient a) where
+  toJSON (Rep x) = toJSON x
+  toJSON (Com x) = toJSON x
+
+instance FromJSON a => FromJSON (ServerToClient a) where
+  parseJSON x = (Rep <$> parseJSON x) <|> (Com <$> parseJSON x)
+
+
+-- * Exceptions
+
+data WebSocketRPCException
+  = WebSocketRPCParseFailure ByteString
+  deriving (Eq, Show, Generic)
+
+instance Exception WebSocketRPCException
