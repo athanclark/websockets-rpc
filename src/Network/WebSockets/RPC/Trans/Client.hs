@@ -11,6 +11,8 @@
 
 module Network.WebSockets.RPC.Trans.Client
   ( WebSocketClientRPCT
+  , runWebSocketClientRPCT'
+  , getClientEnv
   , execWebSocketClientRPCT
   , freshRPCID
   , registerReplyComplete
@@ -33,6 +35,7 @@ import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans (MonadTrans (lift))
 import Control.Monad.Reader.Class (MonadReader (ask, local))
 import Control.Monad.Reader (ReaderT (ReaderT))
+import Control.Monad.Catch (MonadThrow, MonadCatch, MonadMask)
 
 import Data.IntMap.Lazy (IntMap)
 import qualified Data.IntMap.Lazy as IntMap
@@ -58,12 +61,20 @@ newEnv = do
 
 newtype WebSocketClientRPCT rep com m a = WebSocketClientRPCT
   { runWebSocketClientRPCT :: ReaderT (Env rep com m) m a
-  } deriving (Generic, Typeable, Functor, Applicative, Monad, MonadState s, MonadWriter w, MonadIO)
+  } deriving ( Generic, Typeable, Functor, Applicative, Monad
+             , MonadState s, MonadWriter w, MonadIO, MonadThrow, MonadCatch, MonadMask
+             )
+
+runWebSocketClientRPCT' :: Env rep com m -> WebSocketClientRPCT rep com m a -> m a
+runWebSocketClientRPCT' env (WebSocketClientRPCT (ReaderT f)) = f env
+
+getClientEnv :: Applicative m => WebSocketClientRPCT rep com m (Env rep com m)
+getClientEnv = WebSocketClientRPCT (ReaderT (\env -> pure env))
 
 execWebSocketClientRPCT :: MonadIO m => WebSocketClientRPCT rep com m a -> m a
-execWebSocketClientRPCT (WebSocketClientRPCT (ReaderT f)) = do
+execWebSocketClientRPCT f = do
   env <- liftIO newEnv
-  f env
+  runWebSocketClientRPCT' env f
 
 instance MonadTrans (WebSocketClientRPCT rep com) where
   lift x = WebSocketClientRPCT (ReaderT (const x))
