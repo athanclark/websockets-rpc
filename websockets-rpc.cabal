@@ -27,6 +27,7 @@ Library
                       , stm
                       , text
                       , unordered-containers
+                      , wai-transformers
                       , websockets
 
 Test-Suite spec

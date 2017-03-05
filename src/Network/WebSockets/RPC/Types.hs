@@ -8,7 +8,7 @@
 
 module Network.WebSockets.RPC.Types
   ( RPCID, getRPCID, Subscribe (Subscribe), Supply (..), Reply (Reply), Complete (Complete)
-  , RPCIdentified (..)
+  , ClientToServer (..), ServerToClient (..), RPCIdentified (..)
   , WebSocketRPCException (..)
   ) where
 
@@ -65,21 +65,20 @@ instance FromJSON a => FromJSON (Subscribe a) where
   parseJSON x = typeMismatch "Subscribe" x
 
 
-data Supply a = Supply
-  { getSupply :: !(RPCIdentified a)
-  , cancel    :: {-# UNPACK #-} !Bool
-  } deriving (Eq, Generic, Data, Typeable)
+-- | @Nothing@ means the RPC is canceled
+newtype Supply a = Supply { getSupply :: RPCIdentified (Maybe a) }
+  deriving (Eq, Generic, Data, Typeable)
 
 instance ToJSON a => ToJSON (Supply a) where
-  toJSON Supply {getSupply,cancel} = case toJSON getSupply of
-    Object xs -> Object (HM.insert "type" (String "sup") (HM.insert "cancel" (toJSON cancel) xs))
+  toJSON Supply {getSupply} = case toJSON getSupply of
+    Object xs -> Object (HM.insert "type" (String "sup") xs)
     _         -> error "inconceivable!"
 
 instance FromJSON a => FromJSON (Supply a) where
   parseJSON x@(Object o) = do
     t <- o .: "type"
     if t == ("sup" :: Text)
-      then Supply <$> parseJSON x <*> o .: "cancel"
+      then Supply <$> parseJSON x
       else fail "Not a supply"
   parseJSON x = typeMismatch "Supply" x
 
@@ -120,27 +119,27 @@ instance FromJSON a => FromJSON (Complete a) where
 
 -- ** Categorized
 
-data ClientToServer a
-  = Sub (Subscribe a)
-  | Sup (Supply a)
+data ClientToServer sub sup
+  = Sub (Subscribe sub)
+  | Sup (Supply sup)
   deriving (Eq, Generic, Data, Typeable)
 
-instance ToJSON a => ToJSON (ClientToServer a) where
+instance (ToJSON sub, ToJSON sup) => ToJSON (ClientToServer sub sup) where
   toJSON (Sub x) = toJSON x
   toJSON (Sup x) = toJSON x
 
-instance FromJSON a => FromJSON (ClientToServer a) where
+instance (FromJSON sub, FromJSON sup) => FromJSON (ClientToServer sub sup) where
   parseJSON x = (Sub <$> parseJSON x) <|> (Sup <$> parseJSON x)
 
-data ServerToClient a
-  = Rep (Reply a)
-  | Com (Complete a)
+data ServerToClient rep com
+  = Rep (Reply rep)
+  | Com (Complete com)
 
-instance ToJSON a => ToJSON (ServerToClient a) where
+instance (ToJSON rep, ToJSON com) => ToJSON (ServerToClient rep com) where
   toJSON (Rep x) = toJSON x
   toJSON (Com x) = toJSON x
 
-instance FromJSON a => FromJSON (ServerToClient a) where
+instance (FromJSON rep, FromJSON com) => FromJSON (ServerToClient rep com) where
   parseJSON x = (Rep <$> parseJSON x) <|> (Com <$> parseJSON x)
 
 
