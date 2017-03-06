@@ -75,8 +75,8 @@ myClient = rpcClient $ \dispatch ->
 > the `threadDelay` calls are just to exemplify the asynchronisity of the system, nothing to do with avoiding race conditions >.>
 
 
-To turn the `ServerAppT` and `ClientAppT` into natural [https://hackage.haskell.org/package/websockets](Websockets)
-types, use the morphisms from [https://hackage.haskell.org/package/wai-trasformers](Wai-Transformers).
+To turn the `ServerAppT` and `ClientAppT` into natural [WebSockets](https://hackage.haskell.org/package/websockets)
+types, use the morphisms from [Wai-Transformers](https://hackage.haskell.org/package/wai-trasformers).
 
 
 ## Contributing
