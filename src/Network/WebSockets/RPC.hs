@@ -4,11 +4,19 @@
   , NamedFieldPuns
   #-}
 
-module Network.WebSockets.RPC where
+module Network.WebSockets.RPC
+  ( -- * Server
+    RPCServerParams (..), RPCServer, rpcServer
+  , -- * Client
+    RPCClientParams (..), RPCClient (..), rpcClient
+  , -- * Re-Exports
+    WebSocketServerRPCT, execWebSocketServerRPCT, WebSocketClientRPCT, execWebSocketClientRPCT
+  , WebSocketRPCException (..)
+  ) where
 
-import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, runWebSocketServerRPCT', getServerEnv
+import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, runWebSocketServerRPCT', getServerEnv, execWebSocketServerRPCT
                                            , registerSubscribeSupply, runSubscribeSupply, unregisterSubscribeSupply)
-import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, runWebSocketClientRPCT', getClientEnv
+import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, runWebSocketClientRPCT', getClientEnv, execWebSocketClientRPCT
                                            , registerReplyComplete, runReply, runComplete, unregisterReplyComplete
                                            , freshRPCID
                                            )
@@ -24,9 +32,11 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM)
 
 
+-- * Server
+
 data RPCServerParams rep com m = RPCServerParams
   { reply    :: rep -> m () -- ^ dispatch a reply
-  , complete :: com -> m () -- ^ dispatch a completion
+  , complete :: com -> m () -- ^ dispatch a onComplete
   }
 
 type RPCServer sub sup rep com m
@@ -34,23 +44,7 @@ type RPCServer sub sup rep com m
   -> Either sub sup -- ^ handle incoming message
   -> m ()
 
-
-data RPCClientParams sup m = RPCClientParams
-  { supply :: sup -> m () -- ^ dispatch a supply
-  , cancel :: m ()        -- ^ cancel the RPC call
-  }
-
-data RPCClient sub sup rep com m = RPCClient
-  { subscription :: !sub
-  , replier      :: RPCClientParams sup m
-                 -> rep -- ^ handle incoming reply
-                 -> m ()
-  , completion   :: com -> m () -- ^ handle finalized completion
-  }
-
-
-
-
+-- | May throw a 'WebSocketRPCParseFailure' if the opposing party sends bad data
 rpcServer  :: forall sub sup rep com m
             . ( ToJSON rep
               , ToJSON com
@@ -93,17 +87,39 @@ rpcServer f pendingConn = do
   data' <- liftIO (receiveDataMessage conn)
   case data' of
     Text xs -> case decode xs of
-      Nothing -> throwM (WebSocketRPCParseFailure xs)
+      Nothing ->
+        throwM (WebSocketRPCParseFailure ["server","text"] xs)
       Just x -> case x of
         Sub sub -> runSub sub
         Sup sup -> runSup sup
     Binary xs -> case decode xs of
-      Nothing -> throwM (WebSocketRPCParseFailure xs)
+      Nothing ->
+        throwM (WebSocketRPCParseFailure ["server","binary"] xs)
       Just x -> case x of
         Sub sub -> runSub sub
         Sup sup -> runSup sup
 
 
+
+
+-- * Client
+
+
+data RPCClientParams sup m = RPCClientParams
+  { supply :: sup -> m () -- ^ dispatch a supply
+  , cancel :: m ()        -- ^ cancel the RPC call
+  }
+
+data RPCClient sub sup rep com m = RPCClient
+  { subscription :: !sub
+  , onReply      :: RPCClientParams sup m
+                 -> rep
+                 -> m () -- ^ handle incoming reply
+  , onComplete   :: com -> m () -- ^ handle finalized onComplete
+  }
+
+
+-- | May throw a 'WebSocketRPCParseFailure' if the opposing party sends bad data
 rpcClient :: forall sub sup rep com m
            . ( ToJSON sub
              , ToJSON sup
@@ -115,7 +131,7 @@ rpcClient :: forall sub sup rep com m
           => ((RPCClient sub sup rep com m -> WebSocketClientRPCT rep com m ()) -> WebSocketClientRPCT rep com m ())
           -> ClientAppT (WebSocketClientRPCT rep com m) ()
 rpcClient userGo conn =
-  let go RPCClient{subscription,replier,completion} = do
+  let go RPCClient{subscription,onReply,onComplete} = do
         _ident <- freshRPCID
 
         liftIO (sendDataMessage conn (Text (encode (Subscribe RPCIdentified{_ident, _params = subscription}))))
@@ -130,7 +146,7 @@ rpcClient userGo conn =
               liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()}))))
               runWebSocketClientRPCT' env (unregisterReplyComplete _ident)
 
-        registerReplyComplete _ident (replier RPCClientParams{supply,cancel}) completion
+        registerReplyComplete _ident (onReply RPCClientParams{supply,cancel}) onComplete
 
         let runRep :: Reply rep -> WebSocketClientRPCT rep com m ()
             runRep (Reply RPCIdentified{_ident = _ident',_params})
@@ -140,7 +156,7 @@ rpcClient userGo conn =
             runCom :: Complete com -> WebSocketClientRPCT rep com m ()
             runCom (Complete RPCIdentified{_ident = _ident', _params})
               | _ident' == _ident = do
-                  runComplete _ident' _params -- NOTE don't use completion here because it might not exist later
+                  runComplete _ident' _params -- NOTE don't use onComplete here because it might not exist later
                   unregisterReplyComplete _ident'
               | otherwise = pure ()
 
@@ -148,13 +164,15 @@ rpcClient userGo conn =
         case data' of
           Text xs ->
             case decode xs of
-              Nothing -> throwM (WebSocketRPCParseFailure xs)
+              Nothing ->
+                throwM (WebSocketRPCParseFailure ["client","text"] xs)
               Just x -> case x of
                 Rep rep -> runRep rep
                 Com com -> runCom com
           Binary xs ->
             case decode xs of
-              Nothing -> throwM (WebSocketRPCParseFailure xs)
+              Nothing ->
+                throwM (WebSocketRPCParseFailure ["client","binary"] xs)
               Just x -> case x of
                 Rep rep -> runRep rep
                 Com com -> runCom com

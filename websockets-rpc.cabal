@@ -9,6 +9,10 @@ Synopsis:               Simple streaming RPC mechanism using WebSockets
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
 
+Flag Example
+  Description:          Build the example websocket RPC test
+  Default:              False
+
 Library
   Default-Language:     Haskell2010
   HS-Source-Dirs:       src
@@ -24,25 +28,45 @@ Library
                       , containers
                       , exceptions
                       , mtl
+                      , QuickCheck
                       , stm
                       , text
                       , unordered-containers
                       , wai-transformers
                       , websockets
 
-Test-Suite spec
+Test-suite test
   Type:                 exitcode-stdio-1.0
   Default-Language:     Haskell2010
-  Hs-Source-Dirs:       src
-                      , test
-  Ghc-Options:          -Wall
+  Hs-Source-Dirs:       test
+  Ghc-Options:          -Wall -threaded
   Main-Is:              Spec.hs
+  Other-Modules:        Network.WebSockets.RPCSpec
   Build-Depends:        base
-                      , tasty
-                      , tasty-quickcheck
-                      , tasty-hunit
+                      , websockets-rpc
+                      , aeson
                       , QuickCheck
                       , quickcheck-instances
+                      , tasty
+                      , tasty-quickcheck
+
+Executable example
+  if flag(Example)
+    Buildable: True
+  else
+    Buildable: False
+  Default-Language:     Haskell2010
+  Hs-Source-Dirs:       example
+  Ghc-Options:          -Wall -threaded
+  Main-Is:              Main.hs
+  Build-Depends:        base
+                      , websockets-rpc
+                      , aeson
+                      , exceptions
+                      , MonadRandom
+                      , mtl
+                      , wai-transformers
+                      , websockets
 
 Source-Repository head
   Type:                 git

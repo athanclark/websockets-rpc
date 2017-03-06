@@ -14,7 +14,8 @@ module Network.WebSockets.RPC.Trans.Client
   , runWebSocketClientRPCT'
   , getClientEnv
   , execWebSocketClientRPCT
-  , freshRPCID
+  , -- * Utilities
+    freshRPCID
   , registerReplyComplete
   , unregisterReplyComplete
   , runReply

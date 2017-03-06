@@ -14,7 +14,8 @@ module Network.WebSockets.RPC.Trans.Server
   , runWebSocketServerRPCT'
   , getServerEnv
   , execWebSocketServerRPCT
-  , registerSubscribeSupply
+  , -- * Utilities
+    registerSubscribeSupply
   , unregisterSubscribeSupply
   , runSubscribeSupply
   ) where

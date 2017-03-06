@@ -7,9 +7,13 @@
   #-}
 
 module Network.WebSockets.RPC.Types
-  ( RPCID, getRPCID, Subscribe (Subscribe), Supply (..), Reply (Reply), Complete (Complete)
-  , ClientToServer (..), ServerToClient (..), RPCIdentified (..)
-  , WebSocketRPCException (..)
+  ( RPCID, getRPCID
+  , -- * RPC Methods
+    RPCIdentified (..), Subscribe (Subscribe), Supply (..), Reply (Reply), Complete (Complete)
+  , -- ** Categorized
+    ClientToServer (..), ServerToClient (..)
+  , -- * Exceptions
+    WebSocketRPCException (..)
   ) where
 
 import Data.Data (Data, Typeable)
@@ -23,16 +27,18 @@ import Data.ByteString.Lazy (ByteString)
 import Control.Applicative ((<|>))
 import Control.Monad.Catch (Exception)
 
+import Test.QuickCheck (Arbitrary (..), CoArbitrary)
+
 
 -- | Unique identifier for an RPC session
 newtype RPCID = RPCID {getRPCID :: Int}
-  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, FromJSON, ToJSON)
+  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, FromJSON, ToJSON, Arbitrary, CoArbitrary)
 
 
 data RPCIdentified a = RPCIdentified
   { _ident  :: {-# UNPACK #-} !RPCID
   , _params :: !a
-  } deriving (Eq, Generic, Data, Typeable)
+  } deriving (Show, Read, Eq, Generic, Data, Typeable)
 
 instance ToJSON a => ToJSON (RPCIdentified a) where
   toJSON RPCIdentified {_ident,_params} = object
@@ -44,12 +50,15 @@ instance FromJSON a => FromJSON (RPCIdentified a) where
   parseJSON (Object o) = RPCIdentified <$> o .: "ident" <*> o .: "params"
   parseJSON x = typeMismatch "RPCIdentified" x
 
+instance Arbitrary a => Arbitrary (RPCIdentified a) where
+  arbitrary = RPCIdentified <$> arbitrary <*> arbitrary
+  shrink RPCIdentified{_ident,_params} = RPCIdentified <$> shrink _ident <*> shrink _params
 
--- * RPC Methods
 
 
 newtype Subscribe a = Subscribe {getSubscribe :: RPCIdentified a}
-  deriving (Eq, Generic, Data, Typeable)
+  deriving (Show, Read, Eq, Generic, Data, Typeable, Arbitrary)
+
 
 instance ToJSON a => ToJSON (Subscribe a) where
   toJSON (Subscribe x) = case toJSON x of
@@ -67,7 +76,7 @@ instance FromJSON a => FromJSON (Subscribe a) where
 
 -- | @Nothing@ means the RPC is canceled
 newtype Supply a = Supply { getSupply :: RPCIdentified (Maybe a) }
-  deriving (Eq, Generic, Data, Typeable)
+  deriving (Show, Read, Eq, Generic, Data, Typeable, Arbitrary)
 
 instance ToJSON a => ToJSON (Supply a) where
   toJSON Supply {getSupply} = case toJSON getSupply of
@@ -84,7 +93,7 @@ instance FromJSON a => FromJSON (Supply a) where
 
 
 newtype Reply a = Reply {getReply :: RPCIdentified a}
-  deriving (Eq, Generic, Data, Typeable)
+  deriving (Show, Read, Eq, Generic, Data, Typeable, Arbitrary)
 
 instance ToJSON a => ToJSON (Reply a) where
   toJSON (Reply x) = case toJSON x of
@@ -101,7 +110,7 @@ instance FromJSON a => FromJSON (Reply a) where
 
 
 newtype Complete a = Complete {getComplete :: RPCIdentified a}
-  deriving (Eq, Generic, Data, Typeable)
+  deriving (Show, Read, Eq, Generic, Data, Typeable, Arbitrary)
 
 instance ToJSON a => ToJSON (Complete a) where
   toJSON (Complete x) = case toJSON x of
@@ -117,12 +126,15 @@ instance FromJSON a => FromJSON (Complete a) where
   parseJSON x = typeMismatch "Complete" x
 
 
--- ** Categorized
-
 data ClientToServer sub sup
   = Sub (Subscribe sub)
   | Sup (Supply sup)
-  deriving (Eq, Generic, Data, Typeable)
+  deriving (Show, Read, Eq, Generic, Data, Typeable)
+
+instance (Arbitrary sub, Arbitrary sup) => Arbitrary (ClientToServer sub sup) where
+  arbitrary = do
+    q <- arbitrary
+    if q then Sub <$> arbitrary else Sup <$> arbitrary
 
 instance (ToJSON sub, ToJSON sup) => ToJSON (ClientToServer sub sup) where
   toJSON (Sub x) = toJSON x
@@ -134,6 +146,12 @@ instance (FromJSON sub, FromJSON sup) => FromJSON (ClientToServer sub sup) where
 data ServerToClient rep com
   = Rep (Reply rep)
   | Com (Complete com)
+  deriving (Show, Read, Eq, Generic, Data, Typeable)
+
+instance (Arbitrary sub, Arbitrary sup) => Arbitrary (ServerToClient sub sup) where
+  arbitrary = do
+    q <- arbitrary
+    if q then Rep <$> arbitrary else Com <$> arbitrary
 
 instance (ToJSON rep, ToJSON com) => ToJSON (ServerToClient rep com) where
   toJSON (Rep x) = toJSON x
@@ -143,10 +161,8 @@ instance (FromJSON rep, FromJSON com) => FromJSON (ServerToClient rep com) where
   parseJSON x = (Rep <$> parseJSON x) <|> (Com <$> parseJSON x)
 
 
--- * Exceptions
-
 data WebSocketRPCException
-  = WebSocketRPCParseFailure ByteString
-  deriving (Eq, Show, Generic)
+  = WebSocketRPCParseFailure [String] ByteString
+  deriving (Show, Generic)
 
 instance Exception WebSocketRPCException
