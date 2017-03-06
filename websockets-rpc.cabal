@@ -13,6 +13,10 @@ Flag Example
   Description:          Build the example websocket RPC test
   Default:              False
 
+Flag Example-Client
+  Description:          Build the example websocket client RPC test
+  Default:              False
+
 Library
   Default-Language:     Haskell2010
   HS-Source-Dirs:       src
@@ -62,6 +66,26 @@ Executable example
   Build-Depends:        base
                       , websockets-rpc
                       , aeson
+                      , async
+                      , exceptions
+                      , MonadRandom
+                      , mtl
+                      , wai-transformers
+                      , websockets
+
+Executable example-client
+  if flag(Example)
+    Buildable: True
+  else
+    Buildable: False
+  Default-Language:     Haskell2010
+  Hs-Source-Dirs:       example
+  Ghc-Options:          -Wall -threaded
+  Main-Is:              Main-Client.hs
+  Build-Depends:        base
+                      , websockets-rpc
+                      , aeson
+                      , async
                       , exceptions
                       , MonadRandom
                       , mtl

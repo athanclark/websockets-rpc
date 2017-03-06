@@ -28,6 +28,7 @@ import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, D
 import Network.Wai.Trans (ServerAppT, ClientAppT)
 import Data.Aeson (ToJSON, FromJSON, decode, encode)
 
+import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM)
 
@@ -84,20 +85,21 @@ rpcServer f pendingConn = do
           Nothing     -> unregisterSubscribeSupply _ident -- FIXME this could bork the server if I `async` a routine thread
           Just params -> runSubscribeSupply _ident (Right params)
 
-  data' <- liftIO (receiveDataMessage conn)
-  case data' of
-    Text xs -> case decode xs of
-      Nothing ->
-        throwM (WebSocketRPCParseFailure ["server","text"] xs)
-      Just x -> case x of
-        Sub sub -> runSub sub
-        Sup sup -> runSup sup
-    Binary xs -> case decode xs of
-      Nothing ->
-        throwM (WebSocketRPCParseFailure ["server","binary"] xs)
-      Just x -> case x of
-        Sub sub -> runSub sub
-        Sup sup -> runSup sup
+  forever $ do
+    data' <- liftIO (receiveDataMessage conn)
+    case data' of
+      Text xs -> case decode xs of
+        Nothing ->
+          throwM (WebSocketRPCParseFailure ["server","text"] xs)
+        Just x -> case x of
+          Sub sub -> runSub sub
+          Sup sup -> runSup sup
+      Binary xs -> case decode xs of
+        Nothing ->
+          throwM (WebSocketRPCParseFailure ["server","binary"] xs)
+        Just x -> case x of
+          Sub sub -> runSub sub
+          Sup sup -> runSup sup
 
 
 
@@ -160,20 +162,22 @@ rpcClient userGo conn =
                   unregisterReplyComplete _ident'
               | otherwise = pure ()
 
-        data' <- liftIO (receiveDataMessage conn)
-        case data' of
-          Text xs ->
-            case decode xs of
-              Nothing ->
-                throwM (WebSocketRPCParseFailure ["client","text"] xs)
-              Just x -> case x of
-                Rep rep -> runRep rep
-                Com com -> runCom com
-          Binary xs ->
-            case decode xs of
-              Nothing ->
-                throwM (WebSocketRPCParseFailure ["client","binary"] xs)
-              Just x -> case x of
-                Rep rep -> runRep rep
-                Com com -> runCom com
+        forever $ do
+          data' <- liftIO (receiveDataMessage conn)
+          case data' of
+            Text xs ->
+              case decode xs of
+                Nothing ->
+                  throwM (WebSocketRPCParseFailure ["client","text"] xs)
+                Just x -> case x of
+                  Rep rep -> runRep rep
+                  Com com -> runCom com
+            Binary xs ->
+              case decode xs of
+                Nothing ->
+                  throwM (WebSocketRPCParseFailure ["client","binary"] xs)
+                Just x -> case x of
+                  Rep rep -> runRep rep
+                  Com com -> runCom com
+
   in  userGo go

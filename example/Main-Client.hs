@@ -45,27 +45,33 @@ $(deriveJSON defaultOptions{sumEncoding = TwoElemArray} ''MyComDSL)
 
 
 
-myServer :: (MonadIO m, MonadThrow m) => ServerAppT (WebSocketServerRPCT MySubDSL MySupDSL m)
-myServer = rpcServer $ \RPCServerParams{reply,complete} eSubSup -> case eSubSup of
-  Left Foo -> do
-    liftIO $ print Foo
-    forM_ [1..5] $ \_ -> do
-      liftIO $ threadDelay 1000000
-      liftIO $ putStrLn "Replying Baz..."
-      reply Baz
-    liftIO $ putStrLn "Completing Qux..."
-    complete Qux
-  Right Bar -> do
-    liftIO $ print Bar
-    liftIO $ putStrLn "Replying Baz..."
-    reply Baz
+myClient :: (MonadIO m, MonadThrow m) => ClientAppT (WebSocketClientRPCT MyRepDSL MyComDSL m) ()
+myClient = rpcClient $ \dispatch -> do
+  -- only going to make one RPC call for this example
+  liftIO $ putStrLn "Subscribing Foo..."
+  dispatch RPCClient
+    { subscription = Foo
+    , onReply = \RPCClientParams{supply,cancel} Baz -> do
+        liftIO $ print Baz
+        liftIO $ threadDelay 1000000
+        liftIO $ putStrLn "Supplying Bar..."
+        supply Bar
+        (q :: Int) <- (`mod` 10) <$> liftIO getRandom
+        when (q == 0) $ do
+          liftIO $ putStrLn "Canceling..."
+          cancel
+    , onComplete = \Qux ->
+        liftIO $ print Qux
+    }
+
 
 
 
 
 main :: IO ()
 main = do
-  let myServer' :: ServerApp
-      myServer' = runServerAppT execWebSocketServerRPCT myServer
+  let myClient' :: ClientApp ()
+      myClient' = runClientAppT execWebSocketClientRPCT myClient
 
-  runServer "127.0.0.1" 8080 myServer'
+  threadDelay 1000000
+  runClient "127.0.0.1" 8080 "" myClient'

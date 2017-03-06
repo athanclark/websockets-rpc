@@ -32,7 +32,7 @@ import Test.QuickCheck (Arbitrary (..), CoArbitrary)
 
 -- | Unique identifier for an RPC session
 newtype RPCID = RPCID {getRPCID :: Int}
-  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, FromJSON, ToJSON, Arbitrary, CoArbitrary)
+  deriving (Show, Read, Num, Eq, Ord, Enum, Bounded, Generic, Data, Typeable, FromJSON, ToJSON, Arbitrary, CoArbitrary)
 
 
 data RPCIdentified a = RPCIdentified
