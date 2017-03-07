@@ -12,6 +12,17 @@ The idea is pretty simple:
 - the server may respond incrementally with `Reply`
 - the server finishes the RPC call with a `Complete`
 
+```
+client                                                         server
+    ------------------------subscribe--------------------------->
+    - - - - - - - - - - - - -supply - - - - - - - - - - - - - - >
+    < - - - - - - - - - - - -reply- - - - - - - - - - - - - - - -
+    <-----------------------complete-----------------------------
+```
+
+if the `supply` and `reply` parts were ommitted, it would be identical to a traditional RPC mechanism.
+
+
 ### Example
 
 ```haskell

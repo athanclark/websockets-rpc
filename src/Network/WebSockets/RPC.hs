@@ -153,7 +153,7 @@ rpcClient userGo conn =
         let runRep :: Reply rep -> WebSocketClientRPCT rep com m ()
             runRep (Reply RPCIdentified{_ident = _ident',_params})
               | _ident' == _ident = runReply _ident _params
-              | otherwise = pure () -- FIXME fail somehow legibly??
+              | otherwise         = pure () -- FIXME fail somehow legibly??
 
             runCom :: Complete com -> WebSocketClientRPCT rep com m ()
             runCom (Complete RPCIdentified{_ident = _ident', _params})
