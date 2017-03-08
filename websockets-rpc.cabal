@@ -35,6 +35,7 @@ Library
                       , QuickCheck
                       , stm
                       , text
+                      , transformers
                       , unordered-containers
                       , wai-transformers
                       , websockets
