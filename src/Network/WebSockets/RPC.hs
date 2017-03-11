@@ -21,7 +21,7 @@ import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, runWebSocketCl
                                            , freshRPCID
                                            )
 import Network.WebSockets.RPC.Types ( WebSocketRPCException (..), Subscribe (..), Supply (..), Reply (..), Complete (..)
-                                    , ClientToServer (Sub, Sup), ServerToClient (Rep, Com)
+                                    , ClientToServer (Sub, Sup, Ping), ServerToClient (Rep, Com, Pong)
                                     , RPCIdentified (..)
                                     )
 import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, DataMessage (Text, Binary))
@@ -31,6 +31,8 @@ import Data.Aeson (ToJSON, FromJSON, decode, encode)
 import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM)
+import Control.Concurrent (threadDelay)
+import qualified Control.Concurrent.Async as Async
 
 
 -- * Server
@@ -58,6 +60,10 @@ rpcServer  :: forall sub sup rep com m
             -> ServerAppT (WebSocketServerRPCT sub sup m)
 rpcServer f pendingConn = do
   conn <- liftIO (acceptRequest pendingConn)
+  pingpong <- liftIO $ Async.async $ forever $ do
+    sendDataMessage conn (Text (encode (Pong :: ServerToClient () ())))
+    threadDelay 1000000
+
   let runSub :: Subscribe sub -> WebSocketServerRPCT sub sup m ()
       runSub (Subscribe RPCIdentified{_ident,_params}) = do
         env <- getServerEnv
@@ -71,6 +77,7 @@ rpcServer f pendingConn = do
             complete com =
               let c = Complete RPCIdentified{_ident, _params = com}
               in  do liftIO (sendDataMessage conn (Text (encode c)))
+                     liftIO (Async.cancel pingpong)
                      runWebSocketServerRPCT' env (unregisterSubscribeSupply _ident)
 
             cont :: Either sub sup -> m ()
@@ -82,7 +89,8 @@ rpcServer f pendingConn = do
       runSup :: Supply sup -> WebSocketServerRPCT sub sup m ()
       runSup (Supply RPCIdentified{_ident,_params}) =
         case _params of
-          Nothing     -> unregisterSubscribeSupply _ident -- FIXME this could bork the server if I `async` a routine thread
+          Nothing     -> do unregisterSubscribeSupply _ident -- FIXME this could bork the server if I `async` a routine thread
+                            liftIO (Async.cancel pingpong)
           Just params -> runSubscribeSupply _ident (Right params)
 
   forever $ do
@@ -94,12 +102,14 @@ rpcServer f pendingConn = do
         Just x -> case x of
           Sub sub -> runSub sub
           Sup sup -> runSup sup
+          Ping    -> pure ()
       Binary xs -> case decode xs of
         Nothing ->
           throwM (WebSocketRPCParseFailure ["server","binary"] xs)
         Just x -> case x of
           Sub sub -> runSub sub
           Sup sup -> runSup sup
+          Ping    -> pure ()
 
 
 
@@ -172,6 +182,7 @@ rpcClient userGo conn =
                 Just x -> case x of
                   Rep rep -> runRep rep
                   Com com -> runCom com
+                  Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ()))))
             Binary xs ->
               case decode xs of
                 Nothing ->
@@ -179,5 +190,6 @@ rpcClient userGo conn =
                 Just x -> case x of
                   Rep rep -> runRep rep
                   Com com -> runCom com
+                  Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ()))))
 
   in  userGo go

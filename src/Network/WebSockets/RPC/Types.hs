@@ -19,7 +19,7 @@ module Network.WebSockets.RPC.Types
 import Data.Data (Data, Typeable)
 import GHC.Generics (Generic)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=), object)
-import Data.Aeson.Types (typeMismatch, Value (Object, String))
+import Data.Aeson.Types (typeMismatch, Value (Object, String), Parser)
 import qualified Data.HashMap.Lazy as HM
 import Data.Text (Text)
 import Data.ByteString.Lazy (ByteString)
@@ -129,36 +129,54 @@ instance FromJSON a => FromJSON (Complete a) where
 data ClientToServer sub sup
   = Sub (Subscribe sub)
   | Sup (Supply sup)
+  | Ping
   deriving (Show, Read, Eq, Generic, Data, Typeable)
 
 instance (Arbitrary sub, Arbitrary sup) => Arbitrary (ClientToServer sub sup) where
   arbitrary = do
-    q <- arbitrary
-    if q then Sub <$> arbitrary else Sup <$> arbitrary
+    (q,p) <- arbitrary
+    if q
+    then Sub <$> arbitrary
+    else if p
+    then Sup <$> arbitrary
+    else pure Ping
 
 instance (ToJSON sub, ToJSON sup) => ToJSON (ClientToServer sub sup) where
   toJSON (Sub x) = toJSON x
   toJSON (Sup x) = toJSON x
+  toJSON Ping    = toJSON ([] :: [()])
 
 instance (FromJSON sub, FromJSON sup) => FromJSON (ClientToServer sub sup) where
-  parseJSON x = (Sub <$> parseJSON x) <|> (Sup <$> parseJSON x)
+  parseJSON x
+     =  (Sub <$> parseJSON x)
+    <|> (Sup <$> parseJSON x)
+    <|> (Ping <$ (parseJSON x :: Parser [()]))
 
 data ServerToClient rep com
   = Rep (Reply rep)
   | Com (Complete com)
+  | Pong
   deriving (Show, Read, Eq, Generic, Data, Typeable)
 
 instance (Arbitrary sub, Arbitrary sup) => Arbitrary (ServerToClient sub sup) where
   arbitrary = do
-    q <- arbitrary
-    if q then Rep <$> arbitrary else Com <$> arbitrary
+    (q,p) <- arbitrary
+    if q
+    then Rep <$> arbitrary
+    else if p
+    then Com <$> arbitrary
+    else pure Pong
 
 instance (ToJSON rep, ToJSON com) => ToJSON (ServerToClient rep com) where
   toJSON (Rep x) = toJSON x
   toJSON (Com x) = toJSON x
+  toJSON Pong    = toJSON ([] :: [()])
 
 instance (FromJSON rep, FromJSON com) => FromJSON (ServerToClient rep com) where
-  parseJSON x = (Rep <$> parseJSON x) <|> (Com <$> parseJSON x)
+  parseJSON x
+     =  (Rep <$> parseJSON x)
+    <|> (Com <$> parseJSON x)
+    <|> (Pong <$ (parseJSON x :: Parser [()]))
 
 
 data WebSocketRPCException
