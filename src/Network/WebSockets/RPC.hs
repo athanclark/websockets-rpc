@@ -28,7 +28,7 @@ import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, D
 import Network.Wai.Trans (ServerAppT, ClientAppT)
 import Data.Aeson (ToJSON, FromJSON, decode, encode)
 
-import Control.Monad (forever)
+import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM)
 import Control.Concurrent (threadDelay)
@@ -60,7 +60,7 @@ rpcServer  :: forall sub sup rep com m
             -> ServerAppT (WebSocketServerRPCT sub sup m)
 rpcServer f pendingConn = do
   conn <- liftIO (acceptRequest pendingConn)
-  pingpong <- liftIO $ Async.async $ forever $ do
+  void $ liftIO $ Async.async $ forever $ do
     sendDataMessage conn (Text (encode (Pong :: ServerToClient () ())))
     threadDelay 1000000
 
