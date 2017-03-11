@@ -77,7 +77,6 @@ rpcServer f pendingConn = do
             complete com =
               let c = Complete RPCIdentified{_ident, _params = com}
               in  do liftIO (sendDataMessage conn (Text (encode c)))
-                     liftIO (Async.cancel pingpong)
                      runWebSocketServerRPCT' env (unregisterSubscribeSupply _ident)
 
             cont :: Either sub sup -> m ()
@@ -89,8 +88,7 @@ rpcServer f pendingConn = do
       runSup :: Supply sup -> WebSocketServerRPCT sub sup m ()
       runSup (Supply RPCIdentified{_ident,_params}) =
         case _params of
-          Nothing     -> do unregisterSubscribeSupply _ident -- FIXME this could bork the server if I `async` a routine thread
-                            liftIO (Async.cancel pingpong)
+          Nothing     -> unregisterSubscribeSupply _ident -- FIXME this could bork the server if I `async` a routine thread
           Just params -> runSubscribeSupply _ident (Right params)
 
   forever $ do
