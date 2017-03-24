@@ -77,7 +77,7 @@ rpcServer f pendingConn = do
             complete com =
               let c = Complete RPCIdentified{_ident, _params = com}
               in  do liftIO (sendDataMessage conn (Text (encode c)))
-                     runWebSocketServerRPCT' env (unregisterSubscribeSupply _ident)
+                     -- runWebSocketServerRPCT' env (unregisterSubscribeSupply _ident)
 
             cont :: Either sub sup -> m ()
             cont = f RPCServerParams{reply,complete}
