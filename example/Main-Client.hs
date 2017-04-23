@@ -51,6 +51,9 @@ myClient = rpcClient $ \dispatch -> do
   liftIO $ putStrLn "Subscribing Foo..."
   dispatch RPCClient
     { subscription = Foo
+    , onSubscribe = \RPCClientParams{supply,cancel} -> do
+        liftIO $ putStrLn "Supplying Bar..."
+        supply Bar
     , onReply = \RPCClientParams{supply,cancel} Baz -> do
         liftIO $ print Baz
         liftIO $ threadDelay 1000000

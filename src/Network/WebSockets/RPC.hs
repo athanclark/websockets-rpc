@@ -14,9 +14,9 @@ module Network.WebSockets.RPC
   , WebSocketRPCException (..)
   ) where
 
-import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, runWebSocketServerRPCT', getServerEnv, execWebSocketServerRPCT
+import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, execWebSocketServerRPCT
                                            , registerSubscribeSupply, runSubscribeSupply, unregisterSubscribeSupply)
-import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, runWebSocketClientRPCT', getClientEnv, execWebSocketClientRPCT
+import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, execWebSocketClientRPCT
                                            , registerReplyComplete, runReply, runComplete, unregisterReplyComplete
                                            , freshRPCID
                                            )
@@ -31,6 +31,7 @@ import Data.Aeson (ToJSON, FromJSON, decode, encode)
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM)
+import Control.Monad.Trans (lift)
 import Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
 
@@ -66,7 +67,6 @@ rpcServer f pendingConn = do
 
   let runSub :: Subscribe sub -> WebSocketServerRPCT sub sup m ()
       runSub (Subscribe RPCIdentified{_ident,_params}) = do
-        env <- getServerEnv
 
         let reply :: rep -> m ()
             reply rep =
@@ -76,8 +76,7 @@ rpcServer f pendingConn = do
             complete :: com -> m ()
             complete com =
               let c = Complete RPCIdentified{_ident, _params = com}
-              in  do liftIO (sendDataMessage conn (Text (encode c)))
-                     -- runWebSocketServerRPCT' env (unregisterSubscribeSupply _ident)
+              in  liftIO (sendDataMessage conn (Text (encode c)))
 
             cont :: Either sub sup -> m ()
             cont = f RPCServerParams{reply,complete}
@@ -122,6 +121,8 @@ data RPCClientParams sup m = RPCClientParams
 
 data RPCClient sub sup rep com m = RPCClient
   { subscription :: !sub
+  , onSubscribe  :: RPCClientParams sup m
+                 -> m ()
   , onReply      :: RPCClientParams sup m
                  -> rep
                  -> m () -- ^ handle incoming reply
@@ -141,20 +142,19 @@ rpcClient :: forall sub sup rep com m
           => ((RPCClient sub sup rep com m -> WebSocketClientRPCT rep com m ()) -> WebSocketClientRPCT rep com m ())
           -> ClientAppT (WebSocketClientRPCT rep com m) ()
 rpcClient userGo conn =
-  let go RPCClient{subscription,onReply,onComplete} = do
+  let go :: RPCClient sub sup rep com m -> WebSocketClientRPCT rep com m ()
+      go RPCClient{subscription,onSubscribe,onReply,onComplete} = do
         _ident <- freshRPCID
 
         liftIO (sendDataMessage conn (Text (encode (Subscribe RPCIdentified{_ident, _params = subscription}))))
-
-        env <- getClientEnv
 
         let supply :: sup -> m ()
             supply sup = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Just sup}))))
 
             cancel :: m ()
-            cancel = do
-              liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()}))))
-              runWebSocketClientRPCT' env (unregisterReplyComplete _ident)
+            cancel = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()}))))
+
+        lift (onSubscribe RPCClientParams{supply,cancel})
 
         registerReplyComplete _ident (onReply RPCClientParams{supply,cancel}) onComplete
 
