@@ -12,6 +12,7 @@ module Network.WebSockets.RPC
   , -- * Re-Exports
     WebSocketServerRPCT, execWebSocketServerRPCT, WebSocketClientRPCT, execWebSocketClientRPCT
   , WebSocketRPCException (..)
+  , runClientAppTBackingOff
   ) where
 
 import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, execWebSocketServerRPCT
@@ -24,13 +25,14 @@ import Network.WebSockets.RPC.Types ( WebSocketRPCException (..), Subscribe (..)
                                     , ClientToServer (Sub, Sup, Ping), ServerToClient (Rep, Com, Pong)
                                     , RPCIdentified (..)
                                     )
-import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, DataMessage (Text, Binary))
-import Network.Wai.Trans (ServerAppT, ClientAppT)
+import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, DataMessage (Text, Binary), ConnectionException, runClient)
+import Network.Wai.Trans (ServerAppT, ClientAppT, runClientAppT)
 import Data.Aeson (ToJSON, FromJSON, decode, encode)
+import Data.IORef (newIORef, readIORef, writeIORef)
 
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Catch (MonadThrow, throwM)
+import Control.Monad.Catch (MonadThrow, throwM, MonadCatch, catch, SomeException)
 import Control.Monad.Trans (lift)
 import Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
@@ -138,6 +140,7 @@ rpcClient :: forall sub sup rep com m
              , FromJSON com
              , MonadIO m
              , MonadThrow m
+             , MonadCatch m
              )
           => ((RPCClient sub sup rep com m -> WebSocketClientRPCT rep com m ()) -> WebSocketClientRPCT rep com m ())
           -> ClientAppT (WebSocketClientRPCT rep com m) ()
@@ -191,3 +194,36 @@ rpcClient userGo conn =
                   Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ()))))
 
   in  userGo go
+
+
+
+
+runClientAppTBackingOff :: (forall a. m a -> IO a)
+                        -> String
+                        -> Int
+                        -> String
+                        -> ClientAppT m ()
+                        -> IO ()
+runClientAppTBackingOff runM host port path app = do
+  let app' = runClientAppT runM app
+      second = 1000000
+
+  spentWaiting <- newIORef (0 :: Int)
+
+  let handleConnError :: SomeException -> IO ()
+      handleConnError _ = do
+        toWait <- readIORef spentWaiting
+        let toWait' = 2 ^ toWait
+        putStrLn $ "websocket disconnected - waiting " ++ show toWait' ++ " seconds before trying again..."
+        writeIORef spentWaiting (toWait + 1)
+        threadDelay $ second * toWait'
+        loop
+
+      attemptRun x =
+        runClient host port path $ \conn -> do
+          writeIORef spentWaiting 0
+          x conn
+
+      loop = attemptRun app' `catch` handleConnError
+
+  loop

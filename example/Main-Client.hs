@@ -14,7 +14,7 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (async, link)
 import Control.Monad (forM_, when, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Catch (MonadThrow, MonadCatch)
 import Control.Monad.Random.Class (getRandom)
 
 
@@ -45,7 +45,7 @@ $(deriveJSON defaultOptions{sumEncoding = TwoElemArray} ''MyComDSL)
 
 
 
-myClient :: (MonadIO m, MonadThrow m) => ClientAppT (WebSocketClientRPCT MyRepDSL MyComDSL m) ()
+myClient :: (MonadIO m, MonadThrow m, MonadCatch m) => ClientAppT (WebSocketClientRPCT MyRepDSL MyComDSL m) ()
 myClient = rpcClient $ \dispatch -> do
   -- only going to make one RPC call for this example
   liftIO $ putStrLn "Subscribing Foo..."
@@ -77,4 +77,4 @@ main = do
       myClient' = runClientAppT execWebSocketClientRPCT myClient
 
   threadDelay 1000000
-  runClient "127.0.0.1" 8080 "" myClient'
+  runClientAppTBackingOff id "127.0.0.1" 8080 "" myClient'
