@@ -1,5 +1,5 @@
 Name:                   websockets-rpc
-Version:                0.1.1
+Version:                0.2.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -24,6 +24,7 @@ Library
   GHC-Options:          -Wall
   Exposed-Modules:      Network.WebSockets.RPC
                         Network.WebSockets.RPC.Types
+                        Network.WebSockets.RPC.ACKable
                         Network.WebSockets.RPC.Trans.Client
                         Network.WebSockets.RPC.Trans.Server
   Build-Depends:        base >= 4.8 && < 5
@@ -32,12 +33,14 @@ Library
                       , bytestring
                       , containers
                       , exceptions
+                      , hashable
                       , mtl
                       , QuickCheck
                       , stm
                       , text
                       , transformers
                       , unordered-containers
+                      , uuid
                       , wai-transformers
                       , websockets
 
