@@ -21,7 +21,7 @@ import Data.Hashable (Hashable)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=), object)
 import Data.Aeson.Types (typeMismatch, Value (Object))
 import Control.Applicative ((<|>))
-import Control.Monad (when)
+import Control.Monad (when, forever)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (async)
@@ -230,7 +230,7 @@ mkBackoff :: IO a -- ^ Invoked each attempt
           -> IO (Async.Async a)
 mkBackoff op x = do
   spentWaiting <- newIORef (0 :: Int)
-  async $ do
+  async $ forever $ do
     toWait <- readIORef spentWaiting
     writeIORef spentWaiting (toWait + 1)
     let toWait' = 2 ^ toWait
