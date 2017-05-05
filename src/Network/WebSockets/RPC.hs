@@ -59,9 +59,10 @@ rpcServer  :: forall sub sup rep com m
               , MonadIO m
               , MonadThrow m
               )
-            => RPCServer sub sup rep com m
+            => (forall a. m a -> IO a)
+            -> RPCServer sub sup rep com m
             -> ServerAppT (WebSocketServerRPCT sub sup m)
-rpcServer f pendingConn = do
+rpcServer runM f pendingConn = do
   conn <- liftIO (acceptRequest pendingConn)
   void $ liftIO $ Async.async $ forever $ do
     sendDataMessage conn (Text (encode (Pong :: ServerToClient () ())))
@@ -81,7 +82,7 @@ rpcServer f pendingConn = do
               in  liftIO (sendDataMessage conn (Text (encode c)))
 
             cont :: Either sub sup -> m ()
-            cont = f RPCServerParams{reply,complete}
+            cont eSubSup = liftIO $ void $ Async.async $ runM $ f RPCServerParams{reply,complete} eSubSup
 
         registerSubscribeSupply _ident cont
         runSubscribeSupply _ident (Left _params)

@@ -8,6 +8,7 @@ module Main where
 
 import Network.WebSockets (runServer, runClient, ServerApp, ClientApp)
 import Network.WebSockets.RPC
+import Network.WebSockets.RPC.ACKable (ackableRPCServer)
 import Data.Aeson.TH (deriveJSON, defaultOptions, sumEncoding, SumEncoding (TwoElemArray))
 import Network.Wai.Trans (ClientAppT, runClientAppT, ServerAppT, runServerAppT)
 import Control.Concurrent (threadDelay)
@@ -45,8 +46,8 @@ $(deriveJSON defaultOptions{sumEncoding = TwoElemArray} ''MyComDSL)
 
 
 
-myServer :: (MonadIO m, MonadThrow m) => ServerAppT (WebSocketServerRPCT MySubDSL MySupDSL m)
-myServer = rpcServer $ \RPCServerParams{reply,complete} eSubSup -> case eSubSup of
+myServer :: (MonadIO m, MonadThrow m) => RPCServer MySubDSL MySupDSL MyRepDSL MyComDSL m
+myServer RPCServerParams{reply,complete} eSubSup = case eSubSup of
   Left Foo -> do
     liftIO $ print Foo
     forM_ [1..5] $ \_ -> do
@@ -55,17 +56,17 @@ myServer = rpcServer $ \RPCServerParams{reply,complete} eSubSup -> case eSubSup 
       reply Baz
     liftIO $ putStrLn "Completing Qux..."
     complete Qux
-  Right Bar -> do
-    liftIO $ print Bar
-    liftIO $ putStrLn "Replying Baz..."
-    reply Baz
+  Right Bar ->
+    liftIO $ putStrLn "Got Bar..."
 
 
 
 
 main :: IO ()
 main = do
+  let runM = id
+  server <- ackableRPCServer runM ("server" :: String) myServer
   let myServer' :: ServerApp
-      myServer' = runServerAppT execWebSocketServerRPCT myServer
+      myServer' = runServerAppT execWebSocketServerRPCT $ rpcServer runM server
 
   runServer "127.0.0.1" 8080 myServer'
