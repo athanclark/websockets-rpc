@@ -2,6 +2,7 @@
     RankNTypes
   , ScopedTypeVariables
   , NamedFieldPuns
+  , FlexibleContexts
   #-}
 
 module Network.WebSockets.RPC
@@ -16,16 +17,18 @@ module Network.WebSockets.RPC
   ) where
 
 import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, execWebSocketServerRPCT
-                                           , registerSubscribeSupply, runSubscribeSupply, unregisterSubscribeSupply)
+                                           , registerSubscribeSupply, runSubscribeSupply, unregisterSubscribeSupply
+                                           , runWebSocketServerRPCT', getServerEnv)
 import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, execWebSocketClientRPCT
                                            , registerReplyComplete, runReply, runComplete, unregisterReplyComplete
-                                           , freshRPCID
+                                           , freshRPCID, runWebSocketClientRPCT', getClientEnv
                                            )
 import Network.WebSockets.RPC.Types ( WebSocketRPCException (..), Subscribe (..), Supply (..), Reply (..), Complete (..)
                                     , ClientToServer (Sub, Sup, Ping), ServerToClient (Rep, Com, Pong)
                                     , RPCIdentified (..)
                                     )
 import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, DataMessage (Text, Binary), ConnectionException, runClient)
+import Network.WebSockets.Simple (WebSocketsApp (..))
 import Network.Wai.Trans (ServerAppT, ClientAppT, runClientAppT)
 import Data.Aeson (ToJSON, FromJSON, decode, encode)
 import Data.IORef (newIORef, readIORef, writeIORef)
@@ -34,6 +37,7 @@ import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow, throwM, MonadCatch, catch, SomeException)
 import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Control (MonadBaseControl (..))
 import Control.Concurrent (threadDelay)
 import qualified Control.Concurrent.Async as Async
 
@@ -58,11 +62,11 @@ rpcServer  :: forall sub sup rep com m
               , FromJSON sup
               , MonadIO m
               , MonadThrow m
+              , MonadBaseControl IO m
               )
-            => (forall a. m a -> IO a)
-            -> RPCServer sub sup rep com m
+            => RPCServer sub sup rep com m
             -> ServerAppT (WebSocketServerRPCT sub sup m)
-rpcServer runM f pendingConn = do
+rpcServer f pendingConn = do
   conn <- liftIO (acceptRequest pendingConn)
   void $ liftIO $ Async.async $ forever $ do
     sendDataMessage conn (Text (encode (Pong :: ServerToClient () ())))
@@ -82,7 +86,8 @@ rpcServer runM f pendingConn = do
               in  liftIO (sendDataMessage conn (Text (encode c)))
 
             cont :: Either sub sup -> m ()
-            cont eSubSup = liftIO $ void $ Async.async $ runM $ f RPCServerParams{reply,complete} eSubSup
+            cont eSubSup = liftBaseWith $ \runInBase -> void $ Async.async $
+              void $ runInBase $ f RPCServerParams{reply,complete} eSubSup
 
         registerSubscribeSupply _ident cont
         runSubscribeSupply _ident (Left _params)
@@ -111,6 +116,49 @@ rpcServer runM f pendingConn = do
           Sup sup -> runSup sup
           Ping    -> pure ()
 
+
+-- | Note that this does not ping-pong.
+rpcServerSimple :: forall sub sup rep com m
+                 . ( MonadBaseControl IO m
+                   , MonadIO m
+                   )
+                => RPCServer sub sup rep com m
+                -> WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) (WebSocketServerRPCT sub sup m)
+rpcServerSimple f = WebSocketsApp
+  { onOpen = \send -> pure ()
+  , onReceive = \send eSubSup -> do
+      env <- getServerEnv
+
+      let runSub :: Subscribe sub -> WebSocketServerRPCT sub sup m ()
+          runSub (Subscribe RPCIdentified{_ident,_params}) = do
+
+            let reply :: rep -> m ()
+                reply rep =
+                  let r = Reply RPCIdentified{_ident, _params = rep}
+                  in  runWebSocketServerRPCT' env $ send (Left r)
+
+                complete :: com -> m ()
+                complete com =
+                  let c = Complete RPCIdentified{_ident, _params = com}
+                  in  runWebSocketServerRPCT' env $ send (Right c)
+
+                cont :: Either sub sup -> m ()
+                cont eSubSup = liftBaseWith $ \runInBase -> void $ Async.async $
+                  void $ runInBase $ f RPCServerParams{reply,complete} eSubSup
+
+            registerSubscribeSupply _ident cont
+            runSubscribeSupply _ident (Left _params)
+
+          runSup :: Supply sup -> WebSocketServerRPCT sub sup m ()
+          runSup (Supply RPCIdentified{_ident,_params}) =
+            case _params of
+              Nothing     -> unregisterSubscribeSupply _ident -- FIXME this could bork the server if I `async` a routine thread
+              Just params -> runSubscribeSupply _ident (Right params)
+
+      case eSubSup of
+        Left sub -> runSub sub
+        Right sup -> runSup sup
+  }
 
 
 
@@ -196,6 +244,48 @@ rpcClient userGo conn =
 
   in  userGo go
 
+
+-- | Note, does not support pingpong
+rpcClientSimple :: forall sub sup rep com m
+                 . ( MonadIO m
+                   )
+                => RPCClient sub sup rep com m
+                -> WebSocketClientRPCT rep com m (WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) (WebSocketClientRPCT rep com m))
+rpcClientSimple RPCClient{subscription,onSubscribe,onReply,onComplete} = do
+  _ident <- freshRPCID
+  pure WebSocketsApp
+    { onOpen = \send -> do
+        send $ Left $ Subscribe RPCIdentified{_ident, _params = subscription}
+
+        env <- getClientEnv
+
+        let supply :: sup -> m ()
+            supply sup = runWebSocketClientRPCT' env $ send $ Right $ Supply RPCIdentified{_ident, _params = Just sup}
+
+            cancel :: m ()
+            cancel = runWebSocketClientRPCT' env $ send $ Right $ Supply RPCIdentified{_ident, _params = Nothing}
+
+        lift (onSubscribe RPCClientParams{supply,cancel})
+
+        registerReplyComplete _ident (onReply RPCClientParams{supply,cancel}) onComplete
+
+    , onReceive = \send eRepCom -> do
+        let runRep :: Reply rep -> WebSocketClientRPCT rep com m ()
+            runRep (Reply RPCIdentified{_ident = _ident',_params})
+              | _ident' == _ident = runReply _ident _params
+              | otherwise         = pure () -- FIXME fail somehow legibly??
+
+            runCom :: Complete com -> WebSocketClientRPCT rep com m ()
+            runCom (Complete RPCIdentified{_ident = _ident', _params})
+              | _ident' == _ident = do
+                  runComplete _ident' _params -- NOTE don't use onComplete here because it might not exist later
+                  unregisterReplyComplete _ident'
+              | otherwise = pure ()
+
+        case eRepCom of
+          Left rep -> runRep rep
+          Right com -> runCom com
+    }
 
 
 

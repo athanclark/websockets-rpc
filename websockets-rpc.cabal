@@ -34,6 +34,7 @@ Library
                       , containers
                       , exceptions
                       , hashable
+                      , monad-control
                       , mtl
                       , QuickCheck
                       , stm
@@ -43,6 +44,7 @@ Library
                       , uuid
                       , wai-transformers
                       , websockets
+                      , websockets-simple
 
 Test-suite test
   Type:                 exitcode-stdio-1.0
