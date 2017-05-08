@@ -69,7 +69,7 @@ rpcServer  :: forall sub sup rep com m
 rpcServer f pendingConn = do
   conn <- liftIO (acceptRequest pendingConn)
   void $ liftIO $ Async.async $ forever $ do
-    sendDataMessage conn (Text (encode (Pong :: ServerToClient () ())))
+    sendDataMessage conn (Text (encode (Pong :: ServerToClient () ())) Nothing)
     threadDelay 1000000
 
   let runSub :: Subscribe sub -> WebSocketServerRPCT sub sup m ()
@@ -78,12 +78,12 @@ rpcServer f pendingConn = do
         let reply :: rep -> m ()
             reply rep =
               let r = Reply RPCIdentified{_ident, _params = rep}
-              in  liftIO (sendDataMessage conn (Text (encode r)))
+              in  liftIO (sendDataMessage conn (Text (encode r) Nothing))
 
             complete :: com -> m ()
             complete com =
               let c = Complete RPCIdentified{_ident, _params = com}
-              in  liftIO (sendDataMessage conn (Text (encode c)))
+              in  liftIO (sendDataMessage conn (Text (encode c) Nothing))
 
             cont :: Either sub sup -> m ()
             cont eSubSup = liftBaseWith $ \runInBase -> void $ Async.async $
@@ -101,7 +101,7 @@ rpcServer f pendingConn = do
   forever $ do
     data' <- liftIO (receiveDataMessage conn)
     case data' of
-      Text xs -> case decode xs of
+      Text xs _ -> case decode xs of
         Nothing ->
           throwM (WebSocketRPCParseFailure ["server","text"] xs)
         Just x -> case x of
@@ -198,13 +198,13 @@ rpcClient userGo conn =
       go RPCClient{subscription,onSubscribe,onReply,onComplete} = do
         _ident <- freshRPCID
 
-        liftIO (sendDataMessage conn (Text (encode (Subscribe RPCIdentified{_ident, _params = subscription}))))
+        liftIO (sendDataMessage conn (Text (encode (Subscribe RPCIdentified{_ident, _params = subscription})) Nothing))
 
         let supply :: sup -> m ()
-            supply sup = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Just sup}))))
+            supply sup = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Just sup})) Nothing))
 
             cancel :: m ()
-            cancel = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()}))))
+            cancel = liftIO (sendDataMessage conn (Text (encode (Supply RPCIdentified{_ident, _params = Nothing :: Maybe ()})) Nothing))
 
         lift (onSubscribe RPCClientParams{supply,cancel})
 
@@ -225,14 +225,14 @@ rpcClient userGo conn =
         forever $ do
           data' <- liftIO (receiveDataMessage conn)
           case data' of
-            Text xs ->
+            Text xs _ ->
               case decode xs of
                 Nothing ->
                   throwM (WebSocketRPCParseFailure ["client","text"] xs)
                 Just x -> case x of
                   Rep rep -> runRep rep
                   Com com -> runCom com
-                  Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ()))))
+                  Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ())) Nothing))
             Binary xs ->
               case decode xs of
                 Nothing ->
@@ -240,7 +240,7 @@ rpcClient userGo conn =
                 Just x -> case x of
                   Rep rep -> runRep rep
                   Com com -> runCom com
-                  Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ()))))
+                  Pong    -> liftIO (sendDataMessage conn (Text (encode (Ping :: ClientToServer () ())) Nothing))
 
   in  userGo go
 
