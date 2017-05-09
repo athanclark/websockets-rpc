@@ -15,6 +15,10 @@ module Network.WebSockets.RPC
   , WebSocketRPCException (..)
   , runClientAppTBackingOff
   , rpcServerSimple, rpcClientSimple
+  , runWebSocketClientRPCTSimple
+  , execWebSocketClientRPCTSimple
+  , runWebSocketServerRPCTSimple
+  , execWebSocketServerRPCTSimple
   ) where
 
 import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, execWebSocketServerRPCT
@@ -24,12 +28,14 @@ import Network.WebSockets.RPC.Trans.Client ( WebSocketClientRPCT, execWebSocketC
                                            , registerReplyComplete, runReply, runComplete, unregisterReplyComplete
                                            , freshRPCID, runWebSocketClientRPCT', getClientEnv
                                            )
+import qualified Network.WebSockets.RPC.Trans.Server as Server
+import qualified Network.WebSockets.RPC.Trans.Client as Client
 import Network.WebSockets.RPC.Types ( WebSocketRPCException (..), Subscribe (..), Supply (..), Reply (..), Complete (..)
                                     , ClientToServer (Sub, Sup, Ping), ServerToClient (Rep, Com, Pong)
                                     , RPCIdentified (..)
                                     )
 import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, DataMessage (Text, Binary), ConnectionException, runClient)
-import Network.WebSockets.Simple (WebSocketsApp (..))
+import Network.WebSockets.Simple (WebSocketsApp (..), hoistWebSocketsApp)
 import Network.Wai.Trans (ServerAppT, ClientAppT, runClientAppT)
 import Data.Aeson (ToJSON, FromJSON, decode, encode)
 import Data.IORef (newIORef, readIORef, writeIORef)
@@ -319,3 +325,42 @@ runClientAppTBackingOff runM host port path app = do
       loop = attemptRun app' `catch` handleConnError
 
   loop
+
+runWebSocketClientRPCTSimple  :: ( Monad m
+                                 )
+                              => (forall a. WebSocketClientRPCT rep com m a -> m a)
+                              -> WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) (WebSocketClientRPCT rep com m)
+                              -> WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) m
+runWebSocketClientRPCTSimple runWS x = hoistWebSocketsApp runWS lift x
+
+
+execWebSocketClientRPCTSimple  :: ( MonadBaseControl IO m
+                                  )
+                                => WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) (WebSocketClientRPCT rep com m)
+                                -> m (WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) m)
+execWebSocketClientRPCTSimple x = do
+  env <- liftBaseWith $ \_ -> Client.newEnv
+
+  let runWS = runWebSocketClientRPCT' env
+
+  pure $ runWebSocketClientRPCTSimple runWS x
+
+
+runWebSocketServerRPCTSimple :: ( Monad m
+                                )
+                             => (forall a. WebSocketServerRPCT sub sup m a -> m a)
+                             -> WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) (WebSocketServerRPCT sub sup m)
+                             -> WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) m
+runWebSocketServerRPCTSimple runWS x = hoistWebSocketsApp runWS lift x
+
+
+execWebSocketServerRPCTSimple  :: ( MonadBaseControl IO m
+                                  )
+                               =>    WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) (WebSocketServerRPCT sub sup m)
+                               -> m (WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) m)
+execWebSocketServerRPCTSimple x = do
+  env <- liftBaseWith $ \_ -> Server.newEnv
+
+  let runWS = runWebSocketServerRPCT' env
+
+  pure $ runWebSocketServerRPCTSimple runWS x

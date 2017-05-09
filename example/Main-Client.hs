@@ -77,14 +77,11 @@ main = do
       runWS :: WebSocketClientRPCT MyRepDSL MyComDSL IO a -> IO a
       runWS = runWebSocketClientRPCT' env
 
-      mkWS :: IO a -> WebSocketClientRPCT MyRepDSL MyComDSL IO a
-      mkWS = lift
-
-  client <- runWebSocketClientRPCT' env $ rpcClientSimple myClient
+  client <- runWebSocketClientRPCT' env (rpcClientSimple myClient)
 
   -- client <- ackableRPCClient id ("client" :: String) myClient
   let myClient' :: ClientApp ()
-      myClient' = runClientAppT runM $ toClientAppT' $ hoistWebSocketsApp runWS mkWS client
+      myClient' = runClientAppT runM $ toClientAppT' $ runWebSocketClientRPCTSimple runWS client
 
   threadDelay 1000000
   runClientAppTBackingOff id "127.0.0.1" 8080 "" myClient'

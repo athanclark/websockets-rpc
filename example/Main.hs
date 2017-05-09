@@ -67,18 +67,12 @@ myServer RPCServerParams{reply,complete} eSubSup = case eSubSup of
 
 main :: IO ()
 main = do
-  (env :: Env MySubDSL MySupDSL IO) <- newEnv
-
   let runM = id
 
-      runWS :: WebSocketServerRPCT MySubDSL MySupDSL IO a -> IO a
-      runWS = runWebSocketServerRPCT' env
-
-      mkWS :: IO a -> WebSocketServerRPCT MySubDSL MySupDSL IO a
-      mkWS = lift
+  server <- execWebSocketServerRPCTSimple $ rpcServerSimple myServer
 
   -- server <- ackableRPCServer runM ("server" :: String) myServer
   let myServer' :: ServerApp
-      myServer' = runServerAppT runM $ toServerAppT $ hoistWebSocketsApp runWS mkWS $ rpcServerSimple myServer
+      myServer' = runServerAppT runM $ toServerAppT server
 
   runServer "127.0.0.1" 8080 myServer'
