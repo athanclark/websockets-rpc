@@ -7,6 +7,7 @@
   , FlexibleInstances
   , MultiParamTypeClasses
   , UndecidableInstances
+  , TypeFamilies
   #-}
 
 module Network.WebSockets.RPC.Trans.Server
@@ -18,6 +19,8 @@ module Network.WebSockets.RPC.Trans.Server
     registerSubscribeSupply
   , unregisterSubscribeSupply
   , runSubscribeSupply
+  , Env
+  , newEnv
   ) where
 
 import GHC.Generics (Generic)
@@ -35,7 +38,7 @@ import Control.Monad.Trans (MonadTrans (lift))
 import Control.Monad.Reader.Class (MonadReader (ask, local))
 import Control.Monad.Catch (MonadThrow, MonadCatch, MonadMask)
 
-import Control.Monad.Reader (ReaderT (ReaderT))
+import Control.Monad.Reader (ReaderT (..))
 
 import Data.IntMap.Lazy (IntMap)
 import qualified Data.IntMap.Lazy as IntMap

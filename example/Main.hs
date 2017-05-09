@@ -7,13 +7,16 @@
 module Main where
 
 import Network.WebSockets (runServer, runClient, ServerApp, ClientApp)
+import Network.WebSockets.Simple (toServerAppT, hoistWebSocketsApp)
 import Network.WebSockets.RPC
 import Network.WebSockets.RPC.ACKable (ackableRPCServer)
+import Network.WebSockets.RPC.Trans.Server (newEnv, Env, runWebSocketServerRPCT')
 import Data.Aeson.TH (deriveJSON, defaultOptions, sumEncoding, SumEncoding (TwoElemArray))
 import Network.Wai.Trans (ClientAppT, runClientAppT, ServerAppT, runServerAppT)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (async, link)
 import Control.Monad (forM_, when, void)
+import Control.Monad.Trans (lift)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Random.Class (getRandom)
@@ -64,9 +67,18 @@ myServer RPCServerParams{reply,complete} eSubSup = case eSubSup of
 
 main :: IO ()
 main = do
+  (env :: Env MySubDSL MySupDSL IO) <- newEnv
+
   let runM = id
-  server <- ackableRPCServer runM ("server" :: String) myServer
+
+      runWS :: WebSocketServerRPCT MySubDSL MySupDSL IO a -> IO a
+      runWS = runWebSocketServerRPCT' env
+
+      mkWS :: IO a -> WebSocketServerRPCT MySubDSL MySupDSL IO a
+      mkWS = lift
+
+  -- server <- ackableRPCServer runM ("server" :: String) myServer
   let myServer' :: ServerApp
-      myServer' = runServerAppT execWebSocketServerRPCT $ rpcServer runM server
+      myServer' = runServerAppT runM $ toServerAppT $ hoistWebSocketsApp runWS mkWS $ rpcServerSimple myServer
 
   runServer "127.0.0.1" 8080 myServer'

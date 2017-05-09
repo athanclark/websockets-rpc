@@ -20,6 +20,8 @@ module Network.WebSockets.RPC.Trans.Client
   , unregisterReplyComplete
   , runReply
   , runComplete
+  , newEnv
+  , Env
   ) where
 
 import GHC.Generics (Generic)

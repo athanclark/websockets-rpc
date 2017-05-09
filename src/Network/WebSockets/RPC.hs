@@ -14,6 +14,7 @@ module Network.WebSockets.RPC
     WebSocketServerRPCT, execWebSocketServerRPCT, WebSocketClientRPCT, execWebSocketClientRPCT
   , WebSocketRPCException (..)
   , runClientAppTBackingOff
+  , rpcServerSimple, rpcClientSimple
   ) where
 
 import Network.WebSockets.RPC.Trans.Server ( WebSocketServerRPCT, execWebSocketServerRPCT
