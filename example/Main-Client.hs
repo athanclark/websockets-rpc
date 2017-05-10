@@ -6,8 +6,9 @@
 
 module Main where
 
+import Network.Wai.Trans (runClientAppT)
 import Network.WebSockets (runServer, runClient, ServerApp, ClientApp)
-import Network.WebSockets.Simple (toClientAppT', hoistWebSocketsApp)
+import Network.WebSockets.Simple (toClientAppT', hoistWebSocketsApp, expBackoffStrategy)
 import Network.WebSockets.RPC
 import Network.WebSockets.RPC.ACKable (ackableRPCClient)
 import Network.WebSockets.RPC.Trans.Client (newEnv, Env, runWebSocketClientRPCT')
@@ -77,11 +78,12 @@ main = do
       runWS :: WebSocketClientRPCT MyRepDSL MyComDSL IO a -> IO a
       runWS = runWebSocketClientRPCT' env
 
-  client <- runWebSocketClientRPCT' env (rpcClientSimple myClient)
+  client <- runWebSocketClientRPCT' env (rpcClientSimple (\_ -> putStrLn "connection closed"
+                                                         ) myClient)
 
   -- client <- ackableRPCClient id ("client" :: String) myClient
   let myClient' :: ClientApp ()
       myClient' = runClientAppT runM $ toClientAppT' $ runWebSocketClientRPCTSimple runWS client
 
   threadDelay 1000000
-  runClientAppTBackingOff id "127.0.0.1" 8080 "" myClient'
+  expBackoffStrategy $ runClient "127.0.0.1" 8080 "" $ runClientAppT id myClient'

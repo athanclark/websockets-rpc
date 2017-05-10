@@ -1,5 +1,5 @@
 Name:                   websockets-rpc
-Version:                0.5.1
+Version:                0.6.0
 Author:                 Athan Clark <athan.clark@gmail.com>
 Maintainer:             Athan Clark <athan.clark@gmail.com>
 License:                BSD3
@@ -44,7 +44,7 @@ Library
                       , uuid
                       , wai-transformers
                       , websockets >= 0.11
-                      , websockets-simple >= 0.0.2.2
+                      , websockets-simple >= 0.0.5
 
 Test-suite test
   Type:                 exitcode-stdio-1.0

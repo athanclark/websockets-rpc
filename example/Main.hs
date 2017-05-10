@@ -69,7 +69,8 @@ main :: IO ()
 main = do
   let runM = id
 
-  server <- execWebSocketServerRPCTSimple $ rpcServerSimple myServer
+  server <- execWebSocketServerRPCTSimple $ rpcServerSimple ( \_ -> putStrLn "connection closed"
+                                                            ) myServer
 
   -- server <- ackableRPCServer runM ("server" :: String) myServer
   let myServer' :: ServerApp
