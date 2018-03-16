@@ -1,5 +1,5 @@
 name:                websockets-rpc
-version:             0.6.0
+version:             0.7.0
 github:              "athanclark/websockets-rpc"
 license:             BSD3
 author:              "Athan Clark"

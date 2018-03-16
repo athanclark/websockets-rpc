@@ -2,10 +2,10 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 68753bf94cb936169a4ea85612a9ff734ec68d92cb1e3ddc558806767f57c944
+-- hash: c8257b8fab21297c6a0bdb9cec3a4038b0367a663393b3a746bf68f0b4893453
 
 name:           websockets-rpc
-version:        0.6.0
+version:        0.7.0
 synopsis:       Simple streaming RPC mechanism using WebSockets
 description:    Please see the README on Github at <https://github.com/athanclark/sparrow-server#readme>
 category:       Web
