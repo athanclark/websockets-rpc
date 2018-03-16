@@ -35,12 +35,10 @@ import Network.WebSockets.RPC.Types ( WebSocketRPCException (..), Subscribe (..)
                                     , RPCIdentified (..)
                                     )
 import Network.WebSockets (acceptRequest, receiveDataMessage, sendDataMessage, DataMessage (Text, Binary), ConnectionException, runClient)
-import Network.WebSockets.Simple (WebSocketsApp (..), hoistWebSocketsApp, WebSocketsAppParams (..))
+import Network.WebSockets.Simple (WebSocketsApp (..), hoistWebSocketsApp, WebSocketsAppParams (..), CloseOrigin)
 import Network.Wai.Trans (ServerAppT, ClientAppT, runClientAppT)
 import Data.Aeson (ToJSON, FromJSON, decode, encode)
 import Data.IORef (newIORef, readIORef, writeIORef)
-import Data.Word (Word16)
-import Data.ByteString.Lazy (ByteString)
 
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
@@ -131,11 +129,11 @@ rpcServerSimple :: forall sub sup rep com m
                  . ( MonadBaseControl IO m
                    , MonadIO m
                    )
-                => (Maybe (Word16, ByteString) -> m ()) -- ^ see 'Network.WebSockets.Simple.onClose'
+                => (CloseOrigin -> ConnectionException -> m ()) -- ^ see 'Network.WebSockets.Simple.onClose'
                 -> RPCServer sub sup rep com m
-                -> WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) (WebSocketServerRPCT sub sup m)
+                -> WebSocketsApp (WebSocketServerRPCT sub sup m) (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com))
 rpcServerSimple onClose f = WebSocketsApp
-  { onOpen = \send -> pure ()
+  { onOpen = \_ -> pure ()
   , onReceive = \WebSocketsAppParams{send} eSubSup -> do
       env <- getServerEnv
 
@@ -153,8 +151,8 @@ rpcServerSimple onClose f = WebSocketsApp
                   in  runWebSocketServerRPCT' env $ send (Right c)
 
                 cont :: Either sub sup -> m ()
-                cont eSubSup = liftBaseWith $ \runInBase -> void $ Async.async $
-                  void $ runInBase $ f RPCServerParams{reply,complete} eSubSup
+                cont eSubSup' = liftBaseWith $ \runInBase -> void $ Async.async $
+                  void $ runInBase $ f RPCServerParams{reply,complete} eSubSup'
 
             registerSubscribeSupply _ident cont
             runSubscribeSupply _ident (Left _params)
@@ -168,7 +166,7 @@ rpcServerSimple onClose f = WebSocketsApp
       case eSubSup of
         Left sub -> runSub sub
         Right sup -> runSup sup
-  , onClose = lift . onClose
+  , onClose = \o -> lift . onClose o
   }
 
 
@@ -260,9 +258,9 @@ rpcClient userGo conn =
 rpcClientSimple :: forall sub sup rep com m
                  . ( MonadIO m
                    )
-                => (Maybe (Word16, ByteString) -> m ()) -- ^ see 'Network.WebSockets.Simple.onClose'
+                => (CloseOrigin -> ConnectionException -> m ()) -- ^ see 'Network.WebSockets.Simple.onClose'
                 -> RPCClient sub sup rep com m
-                -> WebSocketClientRPCT rep com m (WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) (WebSocketClientRPCT rep com m))
+                -> WebSocketClientRPCT rep com m (WebSocketsApp (WebSocketClientRPCT rep com m) (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)))
 rpcClientSimple onClose RPCClient{subscription,onSubscribe,onReply,onComplete} = do
   _ident <- freshRPCID
   pure WebSocketsApp
@@ -281,7 +279,7 @@ rpcClientSimple onClose RPCClient{subscription,onSubscribe,onReply,onComplete} =
 
         registerReplyComplete _ident (onReply RPCClientParams{supply,cancel}) onComplete
 
-    , onReceive = \WebSocketsAppParams{send} eRepCom -> do
+    , onReceive = \_ eRepCom -> do
         let runRep :: Reply rep -> WebSocketClientRPCT rep com m ()
             runRep (Reply RPCIdentified{_ident = _ident',_params})
               | _ident' == _ident = runReply _ident _params
@@ -297,7 +295,7 @@ rpcClientSimple onClose RPCClient{subscription,onSubscribe,onReply,onComplete} =
         case eRepCom of
           Left rep -> runRep rep
           Right com -> runCom com
-    , onClose = lift . onClose
+    , onClose = \o -> lift . onClose o
     }
 
 
@@ -335,15 +333,15 @@ runClientAppTBackingOff runM host port path app = do
 runWebSocketClientRPCTSimple  :: ( Monad m
                                  )
                               => (forall a. WebSocketClientRPCT rep com m a -> m a)
-                              -> WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) (WebSocketClientRPCT rep com m)
-                              -> WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) m
+                              -> WebSocketsApp (WebSocketClientRPCT rep com m) (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup))
+                              -> WebSocketsApp m                               (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup))
 runWebSocketClientRPCTSimple runWS = hoistWebSocketsApp runWS lift
 
 
 execWebSocketClientRPCTSimple  :: ( MonadBaseControl IO m
                                   )
-                                => WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) (WebSocketClientRPCT rep com m)
-                                -> m (WebSocketsApp (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)) m)
+                                =>    WebSocketsApp (WebSocketClientRPCT rep com m) (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup))
+                                -> m (WebSocketsApp m                               (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)))
 execWebSocketClientRPCTSimple x = do
   env <- liftBaseWith $ \_ -> Client.newEnv
 
@@ -355,15 +353,15 @@ execWebSocketClientRPCTSimple x = do
 runWebSocketServerRPCTSimple :: ( Monad m
                                 )
                              => (forall a. WebSocketServerRPCT sub sup m a -> m a)
-                             -> WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) (WebSocketServerRPCT sub sup m)
-                             -> WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) m
+                             -> WebSocketsApp (WebSocketServerRPCT sub sup m) (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com))
+                             -> WebSocketsApp m                               (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com))
 runWebSocketServerRPCTSimple runWS = hoistWebSocketsApp runWS lift
 
 
 execWebSocketServerRPCTSimple  :: ( MonadBaseControl IO m
                                   )
-                               =>    WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) (WebSocketServerRPCT sub sup m)
-                               -> m (WebSocketsApp (Either (Reply rep) (Complete com)) (Either (Subscribe sub) (Supply sup)) m)
+                               =>    WebSocketsApp (WebSocketServerRPCT sub sup m) (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com))
+                               -> m (WebSocketsApp m                               (Either (Subscribe sub) (Supply sup)) (Either (Reply rep) (Complete com)))
 execWebSocketServerRPCTSimple x = do
   env <- liftBaseWith $ \_ -> Server.newEnv
 

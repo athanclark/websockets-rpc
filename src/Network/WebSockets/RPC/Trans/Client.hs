@@ -72,7 +72,7 @@ runWebSocketClientRPCT' :: Env rep com m -> WebSocketClientRPCT rep com m a -> m
 runWebSocketClientRPCT' env (WebSocketClientRPCT (ReaderT f)) = f env
 
 getClientEnv :: Applicative m => WebSocketClientRPCT rep com m (Env rep com m)
-getClientEnv = WebSocketClientRPCT (ReaderT (\env -> pure env))
+getClientEnv = WebSocketClientRPCT (ReaderT pure)
 
 execWebSocketClientRPCT :: MonadIO m => WebSocketClientRPCT rep com m a -> m a
 execWebSocketClientRPCT f = do
@@ -84,7 +84,7 @@ instance MonadTrans (WebSocketClientRPCT rep com) where
 
 instance MonadReader r m => MonadReader r (WebSocketClientRPCT rep com m) where
   ask                                       = WebSocketClientRPCT (ReaderT (const ask))
-  local f (WebSocketClientRPCT (ReaderT g)) = WebSocketClientRPCT (ReaderT (\env -> local f (g env)))
+  local f (WebSocketClientRPCT (ReaderT g)) = WebSocketClientRPCT (ReaderT (local f . g))
 
 freshRPCID :: MonadIO m => WebSocketClientRPCT rep com m RPCID
 freshRPCID =

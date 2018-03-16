@@ -1,106 +1,94 @@
-Name:                   websockets-rpc
-Version:                0.6.0
-Author:                 Athan Clark <athan.clark@gmail.com>
-Maintainer:             Athan Clark <athan.clark@gmail.com>
-License:                BSD3
-License-File:           LICENSE
-Synopsis:               Simple streaming RPC mechanism using WebSockets
--- Description:
-Category:               Web
-Cabal-Version:          >= 1.10
-Build-Type:             Simple
+-- This file has been generated from package.yaml by hpack version 0.21.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 68753bf94cb936169a4ea85612a9ff734ec68d92cb1e3ddc558806767f57c944
 
-Flag Example
-  Description:          Build the example websocket RPC test
-  Default:              False
+name:           websockets-rpc
+version:        0.6.0
+synopsis:       Simple streaming RPC mechanism using WebSockets
+description:    Please see the README on Github at <https://github.com/athanclark/sparrow-server#readme>
+category:       Web
+homepage:       https://github.com/athanclark/websockets-rpc#readme
+bug-reports:    https://github.com/athanclark/websockets-rpc/issues
+author:         Athan Clark
+maintainer:     athan.clark@gmail.com
+copyright:      BSD-3
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+cabal-version:  >= 1.10
 
-Flag Example-Client
-  Description:          Build the example websocket client RPC test
-  Default:              False
+extra-source-files:
+    README.md
 
-Library
-  Default-Language:     Haskell2010
-  HS-Source-Dirs:       src
-  GHC-Options:          -Wall
-  Exposed-Modules:      Network.WebSockets.RPC
-                        Network.WebSockets.RPC.Types
-                        Network.WebSockets.RPC.ACKable
-                        Network.WebSockets.RPC.Trans.Client
-                        Network.WebSockets.RPC.Trans.Server
-  Build-Depends:        base >= 4.8 && < 5
-                      , aeson
-                      , async
-                      , bytestring
-                      , containers
-                      , exceptions
-                      , hashable
-                      , monad-control
-                      , mtl
-                      , QuickCheck
-                      , stm
-                      , text
-                      , transformers
-                      , unordered-containers
-                      , uuid
-                      , wai-transformers
-                      , websockets >= 0.11
-                      , websockets-simple >= 0.0.5
+source-repository head
+  type: git
+  location: https://github.com/athanclark/websockets-rpc
 
-Test-suite test
-  Type:                 exitcode-stdio-1.0
-  Default-Language:     Haskell2010
-  Hs-Source-Dirs:       test
-  Ghc-Options:          -Wall -threaded
-  Main-Is:              Spec.hs
-  Other-Modules:        Network.WebSockets.RPCSpec
-  Build-Depends:        base
-                      , websockets-rpc
-                      , aeson
-                      , QuickCheck
-                      , quickcheck-instances
-                      , tasty
-                      , tasty-quickcheck
+library
+  exposed-modules:
+      Network.WebSockets.RPC
+      Network.WebSockets.RPC.ACKable
+      Network.WebSockets.RPC.Trans.Client
+      Network.WebSockets.RPC.Trans.Server
+      Network.WebSockets.RPC.Types
+  other-modules:
+      Paths_websockets_rpc
+  hs-source-dirs:
+      src
+  ghc-options: -Wall
+  build-depends:
+      QuickCheck
+    , aeson
+    , async
+    , base >=4.10 && <5.0
+    , bytestring
+    , containers
+    , exceptions
+    , hashable
+    , monad-control
+    , mtl
+    , stm
+    , text
+    , transformers
+    , unordered-containers
+    , uuid
+    , wai-transformers
+    , websockets >=0.12
+    , websockets-simple >=0.1.0
+  default-language: Haskell2010
 
-Executable example
-  if flag(Example)
-    Buildable: True
-  else
-    Buildable: False
-  Default-Language:     Haskell2010
-  Hs-Source-Dirs:       example
-  Ghc-Options:          -Wall -threaded
-  Main-Is:              Main.hs
-  Build-Depends:        base
-                      , websockets-rpc
-                      , aeson
-                      , async
-                      , exceptions
-                      , MonadRandom
-                      , mtl
-                      , wai-transformers
-                      , websockets
-                      , websockets-simple
-
-Executable example-client
-  if flag(Example)
-    Buildable: True
-  else
-    Buildable: False
-  Default-Language:     Haskell2010
-  Hs-Source-Dirs:       example
-  Ghc-Options:          -Wall -threaded
-  Main-Is:              Main-Client.hs
-  Build-Depends:        base
-                      , websockets-rpc
-                      , aeson
-                      , async
-                      , exceptions
-                      , MonadRandom
-                      , mtl
-                      , wai-transformers
-                      , websockets
-                      , websockets-simple
-
-Source-Repository head
-  Type:                 git
-  Location:             https://github.com/athanclark/websockets-rpc
+test-suite sparrow-server-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Network.WebSockets.RPCSpec
+      Paths_websockets_rpc
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , aeson
+    , async
+    , base
+    , bytestring
+    , containers
+    , exceptions
+    , hashable
+    , monad-control
+    , mtl
+    , quickcheck-instances
+    , stm
+    , tasty
+    , tasty-quickcheck
+    , text
+    , transformers
+    , unordered-containers
+    , uuid
+    , wai-transformers
+    , websockets >=0.12
+    , websockets-rpc
+    , websockets-simple >=0.1.0
+  default-language: Haskell2010

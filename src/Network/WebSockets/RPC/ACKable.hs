@@ -20,14 +20,13 @@ import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Hashable (Hashable)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=), object)
 import Data.Aeson.Types (typeMismatch, Value (Object))
-import Control.Applicative ((<|>))
 import Control.Monad (when, forever)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (async)
 import qualified Control.Concurrent.Async as Async
 import Control.Concurrent.STM (atomically)
-import Control.Concurrent.STM.TVar (newTVarIO, readTVarIO, readTVar, writeTVar, modifyTVar, TVar)
+import Control.Concurrent.STM.TVar (newTVarIO, readTVarIO, readTVar, writeTVar, modifyTVar)
 
 
 data ACKable owner a = ACKable
@@ -219,12 +218,6 @@ ackableRPCClient runM clientOwner RPCClient{subscription,onSubscribe,onReply,onC
 
 
 
-second = 1000000
-minute = 60 * second
-hour = 60 * minute
-day = 24 * hour
-week = 7 * day
-
 mkBackoff :: IO a -- ^ Invoked each attempt
           -> IO () -- ^ on quit
           -> IO (Async.Async a)
@@ -234,9 +227,15 @@ mkBackoff op x = do
     toWait <- readIORef spentWaiting
     writeIORef spentWaiting (toWait + 1)
     let toWait' = 2 ^ toWait
-        soFar = sum $ (\x -> (2 ^ x) * second) <$> [0..toWait]
+        soFar = sum $ (\y -> (2 ^ y) * second) <$> [0..toWait]
 
     when (soFar > week) x
 
     threadDelay $ second * (toWait' + 10)
     op
+  where
+    second = 1000000
+    minute = 60 * second
+    hour = 60 * minute
+    day = 24 * hour
+    week = 7 * day
